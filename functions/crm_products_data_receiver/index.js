@@ -1,118 +1,78 @@
 /**
- * 
  * @param {import('./types/basicio').Context} context 
  * @param {import('./types/basicio').BasicIO} basicIO 
  */
 const catalyst = require('zcatalyst-sdk-node');
-const concurrency = require("./concurrency.js");
-
 
 module.exports = async (context, basicIO) => {
+  const catalystApp = require('zcatalyst-sdk-node').initialize(context);
+  const jobScheduling = catalystApp.jobScheduling();
 
-	const catalystApp = catalyst.initialize(context);
-		
-	const jobScheduling = catalystApp.jobScheduling();
-	const delayMS = 60000;
-	const simulatedThreadQty = 1;
-	const today = new Date();
-	const day = today.getDate();
-	const month = today.getMonth() + 1; 
-	const year = today.getFullYear();
+  let dataList = basicIO.getArgument("data");
 
-		
-	/*
-	basicIO will receive something like:
+  if (typeof dataList === "string") {
+    try { dataList = JSON.parse(dataList); }
+    catch { throw new Error("data must be a valid JSON array"); }
+  }
+
+  if (!Array.isArray(dataList) || dataList.length === 0) {
+    throw new Error("Expected a non-empty array");
+  }
+
+  const batchSize = 25;
+  const batches = [];
+  for (let i = 0; i < dataList.length; i += batchSize) {
+    batches.push(dataList.slice(i, i + batchSize));
+  }
+
+  const results = [];
+
+  const now = new Date();
+  const uniqueCode = 
+    String(now.getUTCMonth() + 1).padStart(2, '0') +  // month
+    String(now.getUTCDate()).padStart(2, '0') +       // day
+    String(now.getUTCHours()).padStart(2, '0') +      // hour
+    String(now.getUTCMinutes()).padStart(2, '0');     // minute
 
 
-	{
-		"data": [
-			{"Product_Code":"BE0202DNFR15002000102623330U","Avalara_Tax_code":"TAX123","id":"4973537000031634015"},
-			{"Product_Code":"BE0202DNFR15002000102623330B","Avalara_Tax_code":"TAX456","id":"4973537000031634014"},
-			{"Product_Code":"BE0202DNFR15002000102623330A","Avalara_Tax_code":"TAX789","id":"4973537000031634013"},
-			...
-		] 
-	}
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+
+    // Build cron name
+
+	const cronName = `ib${uniqueCode}_${i}`; // e.g., "ib03201432_0"
+	const jobName = `jb${uniqueCode}_${i}`;  // e.g., "jb03201432_0"
 
 
-	*/
-	let dataList = basicIO.getArgument("data");
-	console.log(`Received data array with ${Array.isArray(dataList) ? dataList.length : 'unknown'} items`);
-
-	if (typeof dataList === "string") {
-		
-		try {
-			dataList = JSON.parse(dataList);
-		} catch {
-			throw new Error("data must be a valid JSON array");
+	///const buffer = 2 * 60_000; // 2 minutes
+	//const runAt = new Date(now + buffer + i * 60_000); // i minutes apart
+	//const cronExpression = `${runAt.getUTCMinutes()} ${runAt.getUTCHours()} ${runAt.getUTCDate()} ${runAt.getUTCMonth()+1} *`;
+    // Schedule this cron to run i minutes in the future
+	const oneTimeCron = {
+		cron_name: cronName,             // ≤20 chars
+		cron_status: true,
+		cron_type: 'OneTime',
+		cron_detail: {
+			time_of_execution: Math.floor(Date.now()/1000) + (i+1) * 60 // i minutes after 2-minute buffer
+		},
+		job_meta: {
+			job_name: jobName,
+			target_type: 'Function',
+			target_name: 'books_item_updater',
+			jobpool_name: 'itembatchUpdatePool',
+			job_config: { number_of_retries: 1, retry_interval: 15*60 },
+			params: { productBatch: batch }
 		}
-	}
+	};
 
-	if (!Array.isArray(dataList) || dataList.length === 0) {
-		throw new Error("Expected non-empty array in data key");
-	}
+    try {
+      const cronResp = await jobScheduling.CRON.createCron(oneTimeCron);
+      results.push({ cronName, status: "scheduled", cronId: cronResp.cron_id });
+    } catch (err) {
+      results.push({ cronName, status: "failed", error: err.message || String(err) });
+    }
+  }
 
-	// Validate that each item has required fields
-	for (let i = 0; i < dataList.length; i++) {
-		if (
-			!dataList[i] 
-			|| typeof dataList[i] !== 'object' 
-			|| !dataList[i].Product_Code || !dataList[i].id 
-			|| !dataList[i].Avalara_Tax_code
-		) {
-
-			throw new Error(`Invalid item at index ${i}: must be object with Product_Code, id, and Avalara_Tax_code`);
-		}
-	}
-
-	const productBatchSubLists = [];
-	const batchSize = 25;
-
-	for (let i = 0; i < dataList.length; i += batchSize) {
-		productBatchSubLists.push(dataList.slice(i, i + batchSize));
-	}
-
-	console.log(`Created ${productBatchSubLists.length} batches of up to ${batchSize} products each`);
-
-
-	const results = [];
-
-	
-	await concurrency.limitConcurrency(productBatchSubLists, simulatedThreadQty, delayMS , async (productBatch,i) => {
-
-		const jobName = `${year}_${month}_${day}_${i}`;
-		
-		try{
-			const jobPoolResp = await jobScheduling.submitJob({
-				job_name: jobName,
-				jobpool_name: "itembatchUpdatePool",
-				target_type: "Function",
-				target_name: "books_item_updater",
-				params: {
-					productBatch: productBatch,		
-				},
-				job_config: {
-					number_of_retries: 3,
-					retry_interval: 15 * 60
-				}
-			})
-
-			results.push({
-				jobName : jobName,
-				jobStatus : "submitted",
-				jobId : jobPoolResp.job_id   
-			})
-		}
-		catch(err){           
-			results.push({
-				jobName : jobName,  
-				jobStatus : "Submit_failed",
-				error : err.message || String(err)
-			})
-		}
-		
-	});
-
-	basicIO.write(JSON.stringify(results));
-
-	context.close();
-}
+  basicIO.write(JSON.stringify(results));
+  context.close();
+};

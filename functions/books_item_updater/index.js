@@ -49,7 +49,7 @@ module.exports = async (jobRequest, context) => {
 				console.log(`Searching for item with SKU: ${productCode}`);
 
 				// Search for item by SKU
-				const searchUrl = `https://books.zoho.com/api/v3/organizations/${organizationId}/items?sku=${encodeURIComponent(productCode)}`;
+				const searchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${organizationId}&sku=${encodeURIComponent(productCode)}`;
 				const searchResponse = await zohoHttpReq(searchUrl, 'GET');
 
 				if (!searchResponse.items || searchResponse.items.length === 0) {
@@ -66,14 +66,14 @@ module.exports = async (jobRequest, context) => {
 				console.log(`Found item: ${item.name} (ID: ${item.item_id})`);
 
 				// Update the item with avatax_code
-				const updateUrl = `https://books.zoho.com/api/v3/organizations/${organizationId}/items/${item.item_id}`;
+				const updateUrl = `https://www.zohoapis.com/books/v3/items/${item.item_id}?organization_id=${organizationId}`;
 				const updateData = {
-					avatax_code: avalaraTaxCode
+					avatax_tax_code: avalaraTaxCode
 				};
 
 				const updateResponse = await zohoHttpReq(updateUrl, 'PUT', updateData);
+				console.log(`Update response for item ${item.item_id}:`, JSON.stringify(updateResponse));
 
-				console.log(`Successfully updated item ${item.item_id} with avatax_code: ${avalaraTaxCode}`);
 				results.push({
 					productId,
 					productCode,

@@ -1,11 +1,13 @@
 const oauth2 = require("./oauth2.js");
+let accessToken = process.env.ACCESS_TOKEN;
+
 
 async function zohoHttpReq(url,type,data) {
 
     const options = {
         method: type,
         headers: {
-            'Authorization': `Zoho-oauthtoken ${process.env.ACCESS_TOKEN}`
+            'Authorization': `Zoho-oauthtoken ${accessToken}`
         } 
     }
 
@@ -18,7 +20,7 @@ async function zohoHttpReq(url,type,data) {
 
     if(!res.ok && [401, 403].includes(res.status)){
         
-        const accessToken = await oauth2.zohoAuthenticate();
+        accessToken = await oauth2.zohoAuthenticate();
 
         options.headers.Authorization = `Zoho-oauthtoken ${accessToken}`;
 

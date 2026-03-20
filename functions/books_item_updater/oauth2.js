@@ -22,6 +22,7 @@ async function zohoAuthenticate(){
     });
 
     const data = await res.json();
+    console.log(`Zoho OAuth response: ${JSON.stringify(data)}`);
 
     if(data.error){
         throw new Error(data.error || "Zoho OAuth failed");
