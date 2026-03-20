@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "targets": [
+      "crm_products_data_receiver",
+      "books_item_updater"
+    ],
+    "ignore": [],
+    "source": "functions"
+  }
+}
