@@ -1,0 +1,82 @@
+string button.pushProductData_Catalyst()
+{
+lastProductImportDateTimeResp = invokeurl
+[
+	url :"https://www.zohoapis.com/crm/v8/settings/variables/lastProductImportDateTime"
+	type :GET
+	connection:"zoho_crm"
+];
+info "lastProductImportDateTimeResp: " + lastProductImportDateTimeResp;
+lastProductImportDateTime = lastProductImportDateTimeResp.get("variables").get(0).get("value");
+info "lastProductImportDateTime: " + lastProductImportDateTime;
+lastProductImportDateTime = lastProductImportDateTime.toString("YYYY-MM-dd HH:mm:SS+05:00").replaceAll(" ","T");
+info "lastProductImportDateTime: " + lastProductImportDateTime;
+criteria = "criteria=" + encodeURL("Created_Time:greater_equal:" + lastProductImportDateTime);
+fields = "fields=id,Product_Code,Avalara_Tax_code,UPC2";
+newProductDataList = List();
+for each  i in {1,2,3,4,5,6,7,8,9,10}
+{
+	url_ = "https://www.zohoapis.com/crm/v8/Products/search?" + criteria + "&" + fields;
+	info "url: " + url_;
+	foundProductsResp = invokeurl
+	[
+		url :url_
+		type :GET
+		connection:"zoho_crm"
+	];
+	info "foundProductsResp: " + foundProductsResp;
+	if(foundProductsResp == null || foundProductsResp == "")
+	{
+		break;
+	}
+	info "foundProductsResp.get(\"info\").get(\"data\"): " + foundProductsResp.get("info").get("more_records");
+	newProductDataList.addAll(foundProductsResp.get("data"));
+	if(!foundProductsResp.get("info").get("more_records"))
+	{
+		break;
+	}
+}
+if(!newProductDataList.size() > 0)
+{
+	return "No new products to sync";
+}
+info "newProductDataList: " + newProductDataList;
+dataMap = Map();
+dataMap.put("data",newProductDataList);
+catalystResp = invokeurl
+[
+	url :"https://project-rainfall-.development.catalystserverless.com/server/crm_products_data_receiver/execute"
+	type :POST
+	body:dataMap.toString()
+];
+info "catalystResp: " + catalystResp;
+hasErrors = false;
+for each  jobLaunch in catalystResp.get("output")
+{
+	if(jobLaunch.get("status") != "scheduled")
+	{
+		hasErrors = true;
+	}
+}
+t = (newProductDataList.size() / 25).round(0) + 5;
+if(!hasErrors)
+{
+	newProductImportDateTime = now.toString("YYYY-MM-dd HH:mm:SS+05:00").replaceAll(" ","T");
+	updateMap = {"variables":{{"id":"6290461000010641003","value":newProductImportDateTime}}};
+	info "updateMap: " + updateMap;
+	setOrgVariableResp = invokeurl
+	[
+		url :"https://www.zohoapis.com/crm/v8/settings/variables"
+		type :PUT
+		body:updateMap.toString()
+		connection:"zoho_crm"
+	];
+	info "setOrgVariableResp: " + setOrgVariableResp;
+	returnMsg = "Success: Books item data will be updated in approximatively " + t + " minutes";
+}
+else
+{
+	returnMsg = "Failure: One or more items will not be updated. Please contact NSI to resolve this.";
+}
+return returnMsg;
+}
