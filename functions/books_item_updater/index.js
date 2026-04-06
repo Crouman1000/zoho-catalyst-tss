@@ -45,6 +45,7 @@ module.exports = async (jobRequest, context) => {
 					const productCode = product.Product_Code;
 					const avalaraTaxCode = product.Avalara_Tax_code;
 					const productId = product.id;
+					const upc = product.UPC2;
 
 					if (!productCode || !avalaraTaxCode) {
 						console.error(`Skipping product ${productId}: missing Product_Code or Avalara_Tax_code`);
@@ -52,6 +53,7 @@ module.exports = async (jobRequest, context) => {
 							productId,
 							productCode,
 							organizationId,
+							upc,
 							status: 'skipped',
 							error: 'Missing required fields'
 						});
@@ -70,6 +72,7 @@ module.exports = async (jobRequest, context) => {
 							productId,
 							productCode,
 							organizationId,
+							upc,
 							status: 'not_found'
 						});
 						continue;
@@ -81,7 +84,8 @@ module.exports = async (jobRequest, context) => {
 					// Update the item with avatax_code
 					const updateUrl = `https://www.zohoapis.com/books/v3/items/${item.item_id}?organization_id=${organizationId}`;
 					const updateData = {
-						avatax_tax_code: avalaraTaxCode
+						avatax_tax_code: avalaraTaxCode,
+						upc:upc
 					};
 
 					const updateResponse = await zohoHttpReq(updateUrl, 'PUT', updateData);
@@ -90,6 +94,8 @@ module.exports = async (jobRequest, context) => {
 					results.push({
 						productId,
 						productCode,
+						organizationId,
+						upc,
 						itemId: item.item_id,
 						status: 'updated'
 					});
@@ -99,6 +105,8 @@ module.exports = async (jobRequest, context) => {
 					results.push({
 						productId: product.id,
 						productCode: product.Product_Code,
+						organizationId,
+						upc: product.UPC2,
 						status: 'error',
 						error: productError.message
 					});
