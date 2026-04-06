@@ -35,7 +35,7 @@ module.exports = async (jobRequest, context) => {
 		console.log(`Processing batch of ${productBatch.length} products`);
 
 		const results = [];
-
+		const failedProducts = new Set();
 
 		for (const organizationId of [ZOHO_ORG_ARI_ID, ZOHO_ORG_NYC_ID, ZOHO_ORG_CAL_ID]) {
 				
@@ -47,8 +47,8 @@ module.exports = async (jobRequest, context) => {
 					const productId = product.id;
 					const upc = product.UPC2;
 
-					if (!productCode || !avalaraTaxCode) {
-						console.error(`Skipping product ${productId}: missing Product_Code or Avalara_Tax_code`);
+					if (!productCode || !avalaraTaxCode || !upc || upc.length !== 12) {
+						console.error(`Skipping product ${productId}: missing Product_Code, Avalara_Tax_code or UPC (must be 12 characters)`);
 						results.push({
 							productId,
 							productCode,
@@ -60,8 +60,25 @@ module.exports = async (jobRequest, context) => {
 						continue;
 					}
 
-					console.log(`Searching for item with SKU: ${productCode}`);
+					
+					console.log(`Synchronizing item bearing SKU: ${productCode}`);
+					// force sync with Zoho Books before searching to ensure we have the latest data
+					const syncUrl = `https://www.zohoapis.com/books/v3/crm/item/${productId}/import?organization_id=${organizationId}`;
+					const syncResponse = await zohoHttpReq(syncUrl, 'POST');
 
+					if (syncResponse.code !== 0) {
+						console.log(`Sync failed for product ${productId} in organization ${organizationId}:`, JSON.stringify(syncResponse));
+						results.push({
+							productId,
+							productCode,
+							organizationId,
+							upc,
+							status: 'sync_failed',
+							error: syncResponse.message || 'Unknown sync error'
+						});
+					}
+
+					console.log(`Searching for item with SKU: ${productCode}`);
 					// Search for item by SKU
 					const searchUrl = `https://www.zohoapis.com/books/v3/items?organization_id=${organizationId}&sku=${encodeURIComponent(productCode)}`;
 					const searchResponse = await zohoHttpReq(searchUrl, 'GET');
@@ -73,9 +90,12 @@ module.exports = async (jobRequest, context) => {
 							productCode,
 							organizationId,
 							upc,
-							status: 'not_found'
+							status: 'error',
+							error: searchResponse.message || 'Item not found'
 						});
-						continue;
+
+						failedProducts.add(productCode);		
+						continue;		
 					}
 
 					const item = searchResponse.items[0]; // Take the first match
@@ -89,7 +109,7 @@ module.exports = async (jobRequest, context) => {
 					};
 
 					const updateResponse = await zohoHttpReq(updateUrl, 'PUT', updateData);
-					console.log(`Update response for item ${item.item_id}:`, JSON.stringify(updateResponse));
+					console.log(`Update response for item ${item.item_id}:`, JSON.stringify(updateResponse.message));
 
 					results.push({
 						productId,
@@ -110,6 +130,9 @@ module.exports = async (jobRequest, context) => {
 						status: 'error',
 						error: productError.message
 					});
+
+					failedProducts.add(product.Product_Code);
+
 				}
 			}
 
@@ -121,8 +144,8 @@ module.exports = async (jobRequest, context) => {
 		// Check if any products failed
 		const failedCount = results.filter(r => r.status === 'error').length;
 		if (failedCount > 0) {
-			console.warn(`${failedCount} products failed to update`);
-			// Still close with success since some may have succeeded
+			console.warn(`${failedCount} products failed to update: ${failedProducts}`);
+			context.closeWithFailure();
 		}
 
 		context.closeWithSuccess();

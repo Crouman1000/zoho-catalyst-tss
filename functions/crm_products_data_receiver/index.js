@@ -60,7 +60,7 @@ module.exports = async (context, basicIO) => {
         target_type: 'Function',
         target_name: 'books_item_updater',
         jobpool_name: 'itembatchUpdatePool',
-        job_config: { number_of_retries: 1, retry_interval: 15*60 },
+        job_config: { number_of_retries: 3, retry_interval: 60*60 },
         params: { productBatch: batch }
       }
     };
