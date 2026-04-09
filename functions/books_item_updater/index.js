@@ -103,10 +103,16 @@ module.exports = async (jobRequest, context) => {
 
 					// Update the item with avatax_code
 					const updateUrl = `https://www.zohoapis.com/books/v3/items/${item.item_id}?organization_id=${organizationId}`;
+
 					const updateData = {
 						avatax_tax_code: avalaraTaxCode,
-						upc:upc
+						upc:upc,
 					};
+
+					if(organizationId === ZOHO_ORG_ARI_ID){
+					
+						updateData.account_id = "5215108000000842173";
+					}
 
 					const updateResponse = await zohoHttpReq(updateUrl, 'PUT', updateData);
 					console.log(`Update response for item ${item.item_id}:`, JSON.stringify(updateResponse.message));
